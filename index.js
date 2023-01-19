@@ -1,293 +1,287 @@
-class Mouse {
-    constructor(canvas) {
-      this.pos = new Vector(-1000, -1000)
-      this.radius = 40
-  
-      canvas.onmousemove = e => this.pos.setXY(e.clientX, e.clientY)
-      canvas.ontouchmove = e => this.pos.setXY(e.touches[0].clientX, e.touches[0].clientY)
-      canvas.ontouchcancel = () => this.pos.setXY(-1000, -1000)
-      canvas.ontouchend = () => this.pos.setXY(-1000, -1000)
-    }
+// Used in flow decision points
+const Constants = {
+  DELETE: 'delete a progress',
+  FORWARD: 'move forward a step in the flow',
+  BACK: 'go back one step in the flow'
+}
+
+// Helpers
+const Utils = {
+  sleep: async (durationMilliseconds) => {
+    return new Promise(resolve => {
+      return setTimeout(resolve, durationMilliseconds)
+    })
+  },
+}
+
+// Side-effects
+const Actions = {
+  async loadUserProgress() {
+    await Utils.sleep(2000)
+    return window.localStorage.getItem('userProgress')
+  },
+
+  async saveUserProgress() {
+    await Utils.sleep(2000)
+    return window.localStorage.setItem(
+      'userProgress',
+      JSON.stringify({some: 'data'})
+    )
+  },
+
+  async deleteUserProgress() {
+    await Utils.sleep(2000)
+    window.localStorage.removeItem('userProgress')
+    return Promise.resolve()
   }
-  
-  class Dot {
-    constructor(x, y) {
-      this.pos = new Vector(x, y)
-      this.oldPos = new Vector(x, y)
-  
-      this.friction = 0.97
-      this.gravity = new Vector(0, 0.6)
-      this.mass = 1
-  
-      this.pinned = false
-  
-      this.lightImg = document.querySelector('#light-img')
-      this.lightSize = 15
-    }
-  
-    update(mouse) {
-      if (this.pinned) return
-      
-      let vel = Vector.sub(this.pos, this.oldPos)
-  
-      this.oldPos.setXY(this.pos.x, this.pos.y)
-  
-      vel.mult(this.friction)
-      vel.add(this.gravity)
-  
-      let { x: dx, y: dy } = Vector.sub(mouse.pos, this.pos)
-      const dist = Math.sqrt(dx * dx + dy * dy)
-  
-      const direction = new Vector(dx / dist, dy / dist)
-  
-      const force = Math.max((mouse.radius - dist) / mouse.radius, 0)
-      
-      if (force > 0.6) this.pos.setXY(mouse.pos.x, mouse.pos.y)
-      else {
-        this.pos.add(vel)
-        this.pos.add(direction.mult(force))
-      }
-    }
-  
-    drawLight(ctx) {
-      ctx.drawImage(
-        this.lightImg,
-        this.pos.x - this.lightSize / 2, this.pos.y - this.lightSize / 2, this.lightSize, this.lightSize
-      )
-    }
-  
-    draw(ctx) {
-      ctx.fillStyle = '#aaa'
-      ctx.fillRect(this.pos.x - this.mass, this.pos.y - this.mass, this.mass * 2, this.mass * 2)
-    }
-  }
-  
-  class Stick {
-    constructor(p1, p2) {
-      this.startPoint = p1
-      this.endPoint = p2
-      
-      this.length = this.startPoint.pos.dist(this.endPoint.pos)
-      this.tension = 0.3
-    }
-  
-    update() {
-      const dx = this.endPoint.pos.x - this.startPoint.pos.x
-      const dy = this.endPoint.pos.y - this.startPoint.pos.y
-  
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      const diff = (dist - this.length) / dist
-  
-      const offsetX = diff * dx * this.tension
-      const offsetY = diff * dy * this.tension
-  
-      const m = this.startPoint.mass + this.endPoint.mass
-      const m1 = this.endPoint.mass / m
-      const m2 = this.startPoint.mass / m
-  
-      if (!this.startPoint.pinned) {
-        this.startPoint.pos.x += offsetX * m1
-        this.startPoint.pos.y += offsetY * m1
-      }
-      if (!this.endPoint.pinned) {
-        this.endPoint.pos.x -= offsetX * m2
-        this.endPoint.pos.y -= offsetY * m2
-      }
-    }
-  
-    draw(ctx) {
-      ctx.beginPath()
-      ctx.strokeStyle = '#999'
-      ctx.moveTo(this.startPoint.pos.x, this.startPoint.pos.y)
-      ctx.lineTo(this.endPoint.pos.x, this.endPoint.pos.y)
-      ctx.stroke()
-      ctx.closePath()
-    }
-  }
-  
-  class Rope {
-    constructor(config) {
-      this.x = config.x
-      this.y = config.y
-      this.segments = config.segments || 10
-      this.gap = config.gap || 15
-      this.color = config.color || 'gray'
-  
-      this.dots = []
-      this.sticks = []
-  
-      this.iterations = 10
-  
-      this.create()
-    }
-  
-    pin(index) {
-      this.dots[index].pinned = true
-    }
-  
-    create() {
-      for (let i = 0; i < this.segments; i++) {
-        this.dots.push(new Dot(this.x, this.y + i * this.gap))
-      }
-      for (let i = 0; i < this.segments - 1; i++) {
-        this.sticks.push(new Stick(this.dots[i], this.dots[i + 1]))
-      }
-    }
+}
+
+// All the ways the app can be in,
+// named and organized freely, using Promises
+const Flows = {
+  master: async () => {
+    const [ , progress ] = await Promise.all([
+      Views.loading(),
+      Actions.loadUserProgress()
+    ])
+    return progress ?
+      Flows.continuation() :
+      Flows.firstTime()
+  },
+
+  continuation: async () => {
+    const { key } = await Views.main()
     
-    update(mouse) {
-      this.dots.forEach(dot => {
-        dot.update(mouse)
+    // A map of possible sub-flows,
+    // Depending on which button in main is clicked,
+    // a different key means a different sequence
+    return {
+      async [Constants.FORWARD]() {
+        await Views.afterMain()
+        return Flows.continuation()
+      },
+
+      async [Constants.DELETE]() {
+        await Promise.all([
+          Views.deleting(),
+          Actions.deleteUserProgress()
+        ])
+
+        return Flows.master()
+      }
+    }[key]()
+  },
+
+  firstTime: async () => {
+    await Views.intro1()
+    await Views.intro2()
+    await Views.intro3()
+    await Views.intro4()
+
+    await Promise.all([
+      Views.saving(),
+      Actions.saveUserProgress()
+    ])
+ 
+    return Flows.continuation()
+  }
+}
+
+// Things to render on the screen
+const Views = {
+  init(el) {
+    this.el = el
+  },
+
+  // One of the 2 "componentized" Views
+  async messageWithCTA({ content, CTA }) {
+    const getCTA = (maybeMultipleCTAs) => {
+      if (Array.isArray(maybeMultipleCTAs)) {
+        return maybeMultipleCTAs
+      }
+      return [CTA]
+    }
+
+    const template = () => {
+      return `
+        <form id="complete-step-form" class="view message-view">
+          ${content}
+          <footer>
+            ${getCTA(CTA).map(eachCTA => `
+              <button
+                autofocus
+                class="btn ${eachCTA.type || ''}"
+                data-key="${eachCTA.key || Constants.FORWARD}"
+              >
+                ${eachCTA.text}
+              </button>
+            `).join('')}
+          </footer>
+        </form>
+      `
+    }
+
+    const transitionDuration = 500
+    
+    const cssVariables = () => `;
+      --transition-duration: ${transitionDuration};
+    `
+
+    const listenToFormSubmit = (onSubmit) => {
+      const form = this.el.querySelector('#complete-step-form')
+      form.addEventListener('submit', e => {
+        e.preventDefault()
+        form.classList.add('exiting')
+        setTimeout(() => {
+          onSubmit({
+            key: e.submitter.dataset.key
+          })
+        }, transitionDuration)
       })
-      for (let i = 0; i < this.iterations; i++) {
-        this.sticks.forEach(stick => {
-          stick.update()
-        })
+    }
+
+    this.el.innerHTML = template()
+    this.el.style.cssText += cssVariables()
+
+    return new Promise(listenToFormSubmit)
+  },
+
+  // Another "component" View
+  async statusFeedback({ text, type }) {
+    const template = () => {
+      const typeClassName = type || ''
+      return `
+        <div class="view status-feedback-view">
+          <span class="animation-object ${type}"></span>
+          <span class="status-text ${type}">${text}</span>
+        </div>
+      `
+    }
+
+    const animationDuration = 1500
+
+    const cssVariables = () => `;
+      --animation-duration: ${animationDuration}ms;
+      --type: ${type};
+    `
+
+    this.el.innerHTML = template()
+    this.el.style.cssText += cssVariables()
+
+    const listenToAnimationEnd = (onEnd) => {
+      setTimeout(onEnd, animationDuration)
+    }   
+
+    await new Promise(listenToAnimationEnd)
+  },
+
+  // A higher-order View, that uses a component
+  async loading() {
+    return Views.statusFeedback({
+      text: 'loading',
+      type: 'loading'
+    })
+  },
+
+  async saving() {
+    return Views.statusFeedback({
+      text: 'saving',
+      type: 'saving'
+    })
+  },
+
+  async deleting() {
+    return Views.statusFeedback({
+      text: 'deleting',
+      type: 'deleting'
+    })
+  },
+
+  // Another higher-order View, that uses a different component
+  async intro1() {
+    return Views.messageWithCTA({
+      content: `
+        <h1>Hello,</h1>
+        <p>You seem to be here for the first time.</p>
+      `,
+      CTA: {
+        text: "Let's start!"
       }
-    }
-  
-    draw(ctx) {
-      this.dots.forEach(dot => {
-        dot.draw(ctx)
-      })
-      this.sticks.forEach(stick => {
-        stick.draw(ctx)
-      })
-      this.dots[this.dots.length - 1].drawLight(ctx)
-    }
-  }
-  
-  class App {
-    static width = innerWidth
-    static height = innerHeight
-    static dpr = devicePixelRatio > 1 ? 2 : 1
-    static interval = 1000 / 60
-  
-    constructor() {
-      this.canvas = document.querySelector('canvas')
-      this.ctx = this.canvas.getContext('2d')
-  
-      this.mouse = new Mouse(this.canvas)
-  
-      this.resize()
-      window.addEventListener('resize', this.resize.bind(this))
-  
-      this.createRopes()
-    }
-  
-    createRopes() {
-      this.ropes = []
-  
-      const TOTAL = App.width * 0.06
-      for (let i = 0; i < TOTAL + 1; i++) {
-        const x = randomNumBetween(App.width * 0.3, App.width * 0.7)
-        const y = 0
-        const gap = randomNumBetween(App.height * 0.05, App.height * 0.08)
-        const segments = 10
-        const rope = new Rope({ x, y, gap, segments })
-        rope.pin(0)
-  
-        this.ropes.push(rope)
+    })
+  },
+
+  async intro2() {
+    return Views.messageWithCTA({
+      content: `
+        <h1>Promises</h1>
+        <p>In this demo, I'm using promises for chaining and transitioning between views.</p>
+      `,
+      CTA: {
+        text: 'What else?'
       }
-    }
-  
-    resize() {
-      App.width = innerWidth
-      App.height = innerHeight
-  
-      this.canvas.style.width = '100%'
-      this.canvas.style.height = '100%'
-      this.canvas.width = App.width * App.dpr
-      this.canvas.height = App.height * App.dpr
-      this.ctx.scale(App.dpr, App.dpr)
-  
-      this.createRopes()
-    }
-  
-    render() {
-      let now, delta
-      let then = Date.now()
-  
-      const frame = () => {
-        requestAnimationFrame(frame)
-        now = Date.now()
-        delta = now - then
-        if (delta < App.interval) return
-        then = now - (delta % App.interval)
-        this.ctx.clearRect(0, 0, App.width, App.height)
-  
-        // draw here
-        this.ropes.forEach(rope => {
-          rope.update(this.mouse)
-          rope.draw(this.ctx)
-        })
+    })
+  },
+
+  async intro3() {
+    return Views.messageWithCTA({
+      content: `
+        <h1>await View()</h1>
+        <p>Views are <em>awaited</em> to unblock their future flow.</p>
+        <p>UI transitions are ensured between every screen.</p>
+      `,
+      CTA: {
+        text: 'Such dimension'
       }
-      requestAnimationFrame(frame)
-    }
-  }
-  
-  function randomNumBetween(min, max) {
-    return Math.random() * (max - min) + min
-  }
-  
-  window.addEventListener('load', () => {
-    const app = new App()
-    app.render()
-  })
-  
-  
-  
-  
-  
-  
-  export default class Vector {
-    constructor(x, y) {
-      this.x = x || 0
-      this.y = y || 0
-    }
-    static add(v1, v2) {
-      return new Vector(v1.x + v2.x, v1.y + v2.y)
-    }
-    static sub(v1, v2) {
-      return new Vector(v1.x - v2.x, v1.y - v2.y)
-    }
-    add(x, y) {
-      if (arguments.length === 1) {
-        this.x += x.x
-        this.y += x.y
-      } else if (arguments.length === 2) {
-        this.x += x
-        this.y += y
+    })
+  },
+
+  async intro4() {
+    return Views.messageWithCTA({
+      content: `
+        <h1>Let's get interactive</h1>
+        <p>After this view, your progress will be saved.</p>
+        <p>You'll switch to a <em>continuation flow</em>, from this <em>intro</em>.</p>
+      `,
+      CTA: {
+        text: "Save it"
       }
-      return this
-    }
-    sub(x, y) {
-      if (arguments.length === 1) {
-        this.x -= x.x
-        this.y -= x.y
-      } else if (arguments.length === 2) {
-        this.x -= x
-        this.y -= y
+    })
+  },
+
+  async main() {
+    return Views.messageWithCTA({
+      content: `
+        <h1>Continuity</h1>
+        <p>Now, you have a <em>progress</em>. If you refresh the browser, I'll remember the progress.</p>
+        <p>Alternatively:</p>
+      `,
+      CTA: [{
+        text: 'Delete progress',
+        type: 'danger',
+        key: Constants.DELETE
+      }, {
+        text: 'Something',
+        type: 'neutral',
+        key: Constants.FORWARD
+      }]
+    })
+  },
+
+  async afterMain() {
+    return Views.messageWithCTA({
+      content: `
+        <img src="https://assets.codepen.io/25387/kuu.jpeg" alt="a photo" />
+      `,
+      CTA: {
+        text: 'Go back',
+        type: 'different'
       }
-      return this
-    }
-    mult(v) {
-      if (typeof v === 'number') {
-        this.x *= v
-        this.y *= v
-      } else {
-        this.x *= v.x
-        this.y *= v.y
-      }
-      return this
-    }
-    setXY(x, y) {
-      this.x = x
-      this.y = y
-      return this
-    }
-    dist(v) {
-      const dx = this.x - v.x
-      const dy = this.y - v.y
-      return Math.sqrt(dx * dx + dy * dy)
-    }
-  }
+    })
+  },
+}
+
+// Views should recognize the container
+Views.init(document.getElementById('app'))
+
+// Init one of the flows
+Flows.master()
