@@ -1,67 +1,33 @@
-* {
-	box-sizing: border-box;
-	margin: 0;
-	padding: 0;
-}
+console.clear();
+const subcontainer = document.querySelector(".subcontainer");
 
-html,
-body {
-	height: 100%;
-}
+const randomZposition = () => {
+	const randomNumber = Math.floor(Math.random() * 2000) + 1;
 
-body {
-	background-color: black;
-	overflow: hidden;
-}
+	return randomNumber % 2 === 0 ? randomNumber : -randomNumber;
+};
 
-.container {
-	height: 100%;
-	perspective: 2000px;
-}
+const randomBlur = (zPosition) => {
+	let positivePositionValue = Math.abs(zPosition);
+	let positionString = positivePositionValue.toString().padStart(4, "0");
+	let stringArr = positionString.split("");
+	stringArr.splice(2, 0, ".");
+	let finalString = stringArr.join("");
+	return finalString;
+};
 
-.subcontainer {
-	height: 100%;
-	position: relative;
-	transform-style: preserve-3d;
-	animation: rotate 30s linear infinite;
-}
+const createCircle = () => {
+	const circle = document.createElement("div");
+	let position = randomZposition();
+	circle.classList.add("circle");
+	circle.style.top = `${Math.floor(Math.random() * window.innerHeight) + 1}px`;
+	circle.style.left = `${Math.floor(Math.random() * window.innerWidth) + 1}px`;
+	circle.style.setProperty("--z-position", `${position}px`);
+	circle.style.setProperty("--blur-value", `${randomBlur(position)}px`);
+	circle.style.setProperty("--hue", `${Math.floor(Math.random() * 361)}`);
+	subcontainer.appendChild(circle);
+};
 
-.circle {
-	--blur-value: 0px;
-	--z-position: 0px;
-	--hue: 0;
-	width: 45px;
-	aspect-ratio: 1;
-	border-radius: 100%;
-	position: absolute;
-	background-color: magenta;
-	background-image: radial-gradient(
-		circle at 65% 15%,
-		white 1px,
-		hsl(var(--hue), 70%, 65%) 3%,
-		hsl(var(--hue), 70%, 35%) 60%,
-		hsl(var(--hue), 70%, 65%) 100%
-	);
-	transform: translateZ(var(--z-position)) rotateY(0deg);
-  animation: rotateY 30s linear infinite;
-	filter: blur(var(--blur-value));
-}
-
-@keyframes rotateY {
-	from {
-		transform: translateZ(var(--z-position)) rotateY(0deg);
-	}
-
-	to {
-		transform: translateZ(var(--z-position)) rotateY(-360deg);
-	}
-}
-
-@keyframes rotate {
-	from {
-		transform: rotateY(0deg);
-	}
-	to {
-		transform: rotateY(360deg);
-	}
+for (let i = 0; i < 350; i++) {
+	createCircle();
 }
